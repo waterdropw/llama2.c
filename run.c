@@ -20,6 +20,19 @@ $ ./run
     #include <unistd.h>
     #include <sys/mman.h>
 #endif
+#include <arm_neon.h>
+
+#define W(i, j) w[(i)*n + (j)]
+#define X(i) x[(i)]
+#define Y(i) xout[(i)]
+
+
+#if defined(__aarch64__)
+#define matmul matmul_unroll
+#else
+#define matmul matmul_naive
+#endif
+
 // ----------------------------------------------------------------------------
 // Transformer and RunState structs, and related memory management
 
@@ -199,17 +212,211 @@ void softmax(float* x, int size) {
     }
 }
 
-void matmul(float* xout, float* x, float* w, int n, int d) {
+void matmul_naive(float* xout, float* x, float* w, int n, int d) {
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
+    // printf("matmul_naive: d=%d, n=%d\n", d, n);
     int i;
-    #pragma omp parallel for private(i)
+#pragma omp parallel for private(i)
     for (i = 0; i < d; i++) {
         float val = 0.0f;
         for (int j = 0; j < n; j++) {
             val += w[i * n + j] * x[j];
         }
         xout[i] = val;
+    }
+}
+
+
+void AddDot8x4(int n, float* xout, float* x, float* w) {
+    int i;
+#if defined(__ARM_NEON)
+    // 先暂存循环展开的每行数据，整行处理完得到最终结果再存到内存。
+    // 注：也可以每次写入xout，下一个循环再读出来累加，但效率不高
+    float32x4_t y_l00_sum = {0};
+    float32x4_t y_l10_sum = {0};
+    float32x4_t y_l20_sum = {0};
+    float32x4_t y_l30_sum = {0};
+    float32x4_t y_l40_sum = {0};
+    float32x4_t y_l50_sum = {0};
+    float32x4_t y_l60_sum = {0};
+    float32x4_t y_l70_sum = {0};
+
+    for (i = 0; i < n; i += 4) {
+        if (i + 4 > n)
+            break;
+
+        // 加载 X 数据
+        float32x4_t x_reg0 = vld1q_f32(&X(i));
+
+        // 每行起始地址，按循环指定的stride跳跃
+        float32x4_t w_l00_reg0 = vld1q_f32(&W(0, i));
+        y_l00_sum = vfmaq_f32(y_l00_sum, w_l00_reg0, x_reg0);
+        float32x4_t w_l10_reg0 = vld1q_f32(&W(1, i));
+        y_l10_sum = vfmaq_f32(y_l10_sum, w_l10_reg0, x_reg0);
+        float32x4_t w_l20_reg0 = vld1q_f32(&W(2, i));
+        y_l20_sum = vfmaq_f32(y_l20_sum, w_l20_reg0, x_reg0);
+        float32x4_t w_l30_reg0 = vld1q_f32(&W(3, i));
+        y_l30_sum = vfmaq_f32(y_l30_sum, w_l30_reg0, x_reg0);
+        float32x4_t w_l40_reg0 = vld1q_f32(&W(4, i));
+        y_l40_sum = vfmaq_f32(y_l40_sum, w_l40_reg0, x_reg0);
+        float32x4_t w_l50_reg0 = vld1q_f32(&W(5, i));
+        y_l50_sum = vfmaq_f32(y_l50_sum, w_l50_reg0, x_reg0);
+        float32x4_t w_l60_reg0 = vld1q_f32(&W(6, i));
+        y_l60_sum = vfmaq_f32(y_l60_sum, w_l60_reg0, x_reg0);
+        float32x4_t w_l70_reg0 = vld1q_f32(&W(7, i));
+        y_l70_sum = vfmaq_f32(y_l70_sum, w_l70_reg0, x_reg0);
+    }
+    if (i != n) {
+        printf("%s:%d %d != %d\n", __FILE__, __LINE__, i, n);
+    }
+
+    float* y_ptr = xout;
+    float32x2_t temp_l0 =
+            vpadd_f32(vget_low_f32(y_l00_sum), vget_high_f32(y_l00_sum));
+    *y_ptr++ = vpadds_f32(temp_l0);
+
+    float32x2_t temp_l1 =
+            vpadd_f32(vget_low_f32(y_l10_sum), vget_high_f32(y_l10_sum));
+    *y_ptr++ = vpadds_f32(temp_l1);
+
+    float32x2_t temp_l2 =
+            vpadd_f32(vget_low_f32(y_l20_sum), vget_high_f32(y_l20_sum));
+    *y_ptr++ = vpadds_f32(temp_l2);
+
+    float32x2_t temp_l3 =
+            vpadd_f32(vget_low_f32(y_l30_sum), vget_high_f32(y_l30_sum));
+    *y_ptr++ = vpadds_f32(temp_l3);
+
+    float32x2_t temp_l4 =
+            vpadd_f32(vget_low_f32(y_l40_sum), vget_high_f32(y_l40_sum));
+    *y_ptr++ = vpadds_f32(temp_l4);
+
+    float32x2_t temp_l5 =
+            vpadd_f32(vget_low_f32(y_l50_sum), vget_high_f32(y_l50_sum));
+    *y_ptr++ = vpadds_f32(temp_l5);
+
+    float32x2_t temp_l6 =
+            vpadd_f32(vget_low_f32(y_l60_sum), vget_high_f32(y_l60_sum));
+    *y_ptr++ = vpadds_f32(temp_l6);
+
+    float32x2_t temp_l7 =
+            vpadd_f32(vget_low_f32(y_l70_sum), vget_high_f32(y_l70_sum));
+    *y_ptr++ = vpadds_f32(temp_l7);
+#endif
+}
+
+void AddDot4x16(int n, float* xout, float* x, float* w) {
+    int i;
+#if defined(__ARM_NEON)
+    // 先暂存循环展开的每行数据，整行处理完得到最终结果再存到内存。
+    // 注：也可以每次写入xout，下一个循环再读出来累加，但效率不高
+    float32x4_t y_l00_sum = {0};
+    float32x4_t y_l04_sum = {0};
+    float32x4_t y_l08_sum = {0};
+    float32x4_t y_l0c_sum = {0};
+    float32x4_t y_l10_sum = {0};
+    float32x4_t y_l14_sum = {0};
+    float32x4_t y_l18_sum = {0};
+    float32x4_t y_l1c_sum = {0};
+    float32x4_t y_l20_sum = {0};
+    float32x4_t y_l24_sum = {0};
+    float32x4_t y_l28_sum = {0};
+    float32x4_t y_l2c_sum = {0};
+    float32x4_t y_l30_sum = {0};
+    float32x4_t y_l34_sum = {0};
+    float32x4_t y_l38_sum = {0};
+    float32x4_t y_l3c_sum = {0};
+
+    for (i = 0; i < n; i += 16) {
+        if (i + 16 > n)
+            break;
+
+        // 加载 X 数据
+        float32x4_t x_reg0 = vld1q_f32(&X(i));
+        float32x4_t x_reg4 = vld1q_f32(&X(i+4));
+        float32x4_t x_reg8 = vld1q_f32(&X(i+8));
+        float32x4_t x_regc = vld1q_f32(&X(i+12));
+
+        // 每行起始地址，按循环指定的stride跳跃
+        float32x4_t w_reg0 = vld1q_f32(&W(0, i));
+        float32x4_t w_reg4 = vld1q_f32(&W(0, i + 4));
+        float32x4_t w_reg8 = vld1q_f32(&W(0, i + 8));
+        float32x4_t w_regc = vld1q_f32(&W(0, i + 12));
+        y_l00_sum = vfmaq_f32(y_l00_sum, w_reg0, x_reg0);
+        y_l04_sum = vfmaq_f32(y_l04_sum, w_reg4, x_reg4);
+        y_l08_sum = vfmaq_f32(y_l08_sum, w_reg8, x_reg8);
+        y_l0c_sum = vfmaq_f32(y_l0c_sum, w_regc, x_regc);
+
+        w_reg0 = vld1q_f32(&W(1, i));
+        w_reg4 = vld1q_f32(&W(1, i + 4));
+        w_reg8 = vld1q_f32(&W(1, i + 8));
+        w_regc = vld1q_f32(&W(1, i + 12));
+        y_l10_sum = vfmaq_f32(y_l10_sum, w_reg0, x_reg0);
+        y_l14_sum = vfmaq_f32(y_l14_sum, w_reg4, x_reg4);
+        y_l18_sum = vfmaq_f32(y_l18_sum, w_reg8, x_reg8);
+        y_l1c_sum = vfmaq_f32(y_l1c_sum, w_regc, x_regc);
+
+        w_reg0 = vld1q_f32(&W(2, i));
+        w_reg4 = vld1q_f32(&W(2, i + 4));
+        w_reg8 = vld1q_f32(&W(2, i + 8));
+        w_regc = vld1q_f32(&W(2, i + 12));
+        y_l20_sum = vfmaq_f32(y_l20_sum, w_reg0, x_reg0);
+        y_l24_sum = vfmaq_f32(y_l24_sum, w_reg4, x_reg4);
+        y_l28_sum = vfmaq_f32(y_l28_sum, w_reg8, x_reg8);
+        y_l2c_sum = vfmaq_f32(y_l2c_sum, w_regc, x_regc);
+
+        w_reg0 = vld1q_f32(&W(3, i));
+        w_reg4 = vld1q_f32(&W(3, i + 4));
+        w_reg8 = vld1q_f32(&W(3, i + 8));
+        w_regc = vld1q_f32(&W(3, i + 12));
+        y_l30_sum = vfmaq_f32(y_l30_sum, w_reg0, x_reg0);
+        y_l34_sum = vfmaq_f32(y_l34_sum, w_reg4, x_reg4);
+        y_l38_sum = vfmaq_f32(y_l38_sum, w_reg8, x_reg8);
+        y_l3c_sum = vfmaq_f32(y_l3c_sum, w_regc, x_regc);
+    }
+    if (i != n) {
+        printf("%s:%d %d != %d\n", __FILE__, __LINE__, i, n);
+    }
+    float* y_ptr = xout;
+    float32x4_t temp04 = vaddq_f32(y_l00_sum, y_l04_sum);
+    float32x4_t temp8c = vaddq_f32(y_l08_sum, y_l0c_sum);
+    float32x4_t temp0 = vaddq_f32(temp04, temp8c);
+    float32x2_t temp1 = vpadd_f32(vget_low_f32(temp0), vget_high_f32(temp0));
+    *y_ptr++ = vpadds_f32(temp1);
+
+    temp04 = vaddq_f32(y_l10_sum, y_l14_sum);
+    temp8c = vaddq_f32(y_l18_sum, y_l1c_sum);
+    temp0 = vaddq_f32(temp04, temp8c);
+    temp1 = vpadd_f32(vget_low_f32(temp0), vget_high_f32(temp0));
+    *y_ptr++ = vpadds_f32(temp1);
+
+    temp04 = vaddq_f32(y_l20_sum, y_l24_sum);
+    temp8c = vaddq_f32(y_l28_sum, y_l2c_sum);
+    temp0 = vaddq_f32(temp04, temp8c);
+    temp1 = vpadd_f32(vget_low_f32(temp0), vget_high_f32(temp0));
+    *y_ptr++ = vpadds_f32(temp1);
+
+    temp04 = vaddq_f32(y_l30_sum, y_l34_sum);
+    temp8c = vaddq_f32(y_l38_sum, y_l3c_sum);
+    temp0 = vaddq_f32(temp04, temp8c);
+    temp1 = vpadd_f32(vget_low_f32(temp0), vget_high_f32(temp0));
+    *y_ptr++ = vpadds_f32(temp1);
+#endif
+}
+
+void matmul_unroll(float* xout, float* x, float* w, int n, int d) {
+    // printf("matmul_unroll: d=%d, n=%d\n", d, n);
+
+    int i, j;
+    // 循环展开，一次处理的行数
+    for (i = 0; i < d; i += 8) {
+        if (i + 8 > d)
+            break;
+        AddDot8x4(n, &Y(i), &X(0), &W(i, 0));
+    }
+    if (i != d) {
+        fprintf(stderr, "%s:%d %d != %d\n", __FILE__, __LINE__, i, d);
     }
 }
 
