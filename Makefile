@@ -48,3 +48,6 @@ runompgnu:
 .PHONY: clean
 clean:
 	rm -f run
+
+.PHONY: all
+all: run runfast runomp rungnu runompgnu
