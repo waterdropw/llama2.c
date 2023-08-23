@@ -1,0 +1,4 @@
+assets/stories15M.bin filter=lfs diff=lfs merge=lfs -text
+assets/stories260K.bin filter=lfs diff=lfs merge=lfs -text
+assets/stories42M.bin filter=lfs diff=lfs merge=lfs -text
+assets/stories110M.bin filter=lfs diff=lfs merge=lfs -text
