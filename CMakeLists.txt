@@ -2,18 +2,36 @@ cmake_minimum_required(VERSION 3.12)
 
 project(llama.c)
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS_DEBUG "-g")
+include(FetchContent)
+# Fetch the cpuinfo library
+FetchContent_Declare(
+        cpuinfo
+        GIT_REPOSITORY https://github.com/pytorch/cpuinfo.git
+        GIT_TAG main)
+set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE BOOL "" FORCE)
+set(CPUINFO_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cpuinfo)
+
+
+#set(CMAKE_C_STANDARD 11)
+#set(CMAKE_C_FLAGS_DEBUG "-g")
 
 option(LLAMA_C_O3   "llama.c: enable -Ofast flag"               ON)
-option(LLAMA_C_NATIVE  "llama.c: enable -march=native flag"        ON)
+option(LLAMA_C_NATIVE  "llama.c: enable -march=native flag"        OFF)
 option(LLAMA_C_OFAST   "llama.c: enable -Ofast flag"               OFF)
 option(LLAMA_C_DEBUG  "llama.c: enable -g flag"        OFF)
 option(LLAMA_C_OMP  "llama.c: enable -fopenmp flag"        OFF)
 option(LLAMA_C_GNU  "llama.c: enable -std=gnu11 flag"        OFF)
+option(DISABLE_NEON "llama.c: disable NEON"        OFF)
+
+file(GLOB_RECURSE OPTSRC src/*.c)
 
 # Add the executable target
-add_executable(run run.c)
+add_executable(run run.c ${OPTSRC})
+target_link_libraries(run PRIVATE cpuinfo)
+target_include_directories(run PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Enable flags
 if (LLAMA_C_NATIVE)
@@ -41,4 +59,7 @@ if (LLAMA_C_OMP)
 endif()
 if (LLAMA_C_GNU)
     target_compile_options(run PRIVATE -std=gnu11)
+endif ()
+if (DISABLE_NEON)
+    target_compile_definitions(run PRIVATE -DDISABLE_NEON=1)
 endif ()

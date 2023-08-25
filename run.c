@@ -20,6 +20,7 @@ $ ./run
     #include <unistd.h>
     #include <sys/mman.h>
 #endif
+#include "matvecmul.h"
 
 // ----------------------------------------------------------------------------
 // Transformer and RunState structs, and related memory management
@@ -201,6 +202,7 @@ void softmax(float* x, int size) {
 }
 
 void matmul(float* xout, float* x, float* w, int n, int d) {
+#if 0
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
     // printf("matmul_naive: d=%d, n=%d\n", d, n);
@@ -213,6 +215,9 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
         }
         xout[i] = val;
     }
+#else
+    MatVecMul(w, x, xout, d, n);
+#endif
 }
 
 void transformer(int token, int pos, Config* p, RunState* s, TransformerWeights* w) {
