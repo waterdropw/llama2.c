@@ -12,6 +12,7 @@ extern "C" {
 
 #if defined(HAS_MATVECMUL_NEON64)
 void MatVecMulRow_NEON64(const float* W, int stride, const float* x, float* y, int cols) {
+#if 1
   __asm__ volatile (
       // 遍历一行，每次处理4个元素，累加结果暂存到寄存器 v0 中
       "movi   v0.2d, #0000000000000000             \n"
@@ -33,6 +34,31 @@ void MatVecMulRow_NEON64(const float* W, int stride, const float* x, float* y, i
       : "r"(cols)       // %4
       : "cc", "memory", "v0", "v1", "v2"  // Clobber List，no need list the general registers (the compiler will handle it)
       );
+#else
+  __asm__ volatile (
+      // 遍历一行，每次处理4个元素，累加结果暂存到寄存器 v0 中
+      "movi   v0.2d, #0000000000000000             \n"
+      "add    x8, x4, #8            \n"
+      "movi   v1.2d, #0000000000000000             \n"
+      "1:                           \n"
+      "ldp     q2, q3, [%0], #32    \n"   // ldx/ldr/ldp 偏移按字节单位计数
+      "ldp     q4, q5, [%2], #32    \n"
+      "subs    x8, x8, #8           \n"
+      "fmla    v0.4s, v2.4s, v4.4s  \n"
+      "fmla    v0.4s, v3.4s, v5.4s  \n"
+      "b.ne    1b                   \n"
+      "fadd    v0.4s, v0.4s, v1.4s  \n"
+      "faddp   v0.4s, v0.4s, v0.4s  \n"
+      "faddp   s0, v0.2s            \n"
+      "str     s0, [x3]             \n"
+      : "+r"(W),        // %0
+        "+r"(stride),   // %1
+        "+r"(x),        // %2
+        "+r"(y)         // %3
+      : "r"(cols)       // %4
+      : "cc", "memory", "v0", "v1", "v2", "v3", "v4", "v5"  // Clobber List，no need list the general registers (the compiler will handle it)
+  );
+#endif
 }
 #endif  // defined(HAS_MATVECMUL_NEON64)
 
