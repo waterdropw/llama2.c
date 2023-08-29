@@ -53,9 +53,6 @@ extern "C" {
 
 
 void MatVecMulRow_NAIVE(const float* W, int stride, const float* x, float* y, int cols);
-//void MatVecMulCx8_NAIVE(const float* W, int stride, const float* x, float* y, int cols);
-//void MatVecMulCx16_NAIVE(const float* W, int stride, const float* x, float* y, int cols);
-
 void MatVecMulRow_NEON(const float* w, int stride, const float* x, float* y, int cols);
 void MatVecMulRow_NEON64(const float* w, int stride, const float* x, float* y, int cols);
 void MatVecMulRow_AVX2(const float* w, int stride, const float* x, float* y, int cols);

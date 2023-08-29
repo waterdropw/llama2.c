@@ -3,6 +3,8 @@
 //
 
 #include "matvecmul_row.h"
+
+#if defined(HAS_MATVECMUL_NEON64)
 #include <arm_neon.h>
 
 #ifdef __cplusplus
@@ -10,7 +12,6 @@ namespace hpc {
 extern "C" {
 #endif
 
-#if defined(HAS_MATVECMUL_NEON64)
 void MatVecMulRow_NEON64(const float* w, int stride, const float* x, float* y, int cols) {
 //  printf("NEON64\n");
 #if 0
@@ -61,9 +62,9 @@ void MatVecMulRow_NEON64(const float* w, int stride, const float* x, float* y, i
   );
 #endif
 }
-#endif  // defined(HAS_MATVECMUL_NEON64)
 
 #ifdef __cplusplus
 }  // extern "C"
 }  // namespace hpc
 #endif
+#endif  // defined(HAS_MATVECMUL_NEON64)

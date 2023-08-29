@@ -1,10 +1,10 @@
 //
 // Created by xbwee on 2023/8/25.
 //
-
+#include <stdio.h>
+#include "cpuinfo.h"
 #include "matvecmul.h"
 #include "matvecmul_row.h"
-#include "cpuinfo.h"
 
 #ifdef __cplusplus
 namespace hpc {
@@ -15,6 +15,7 @@ void MatVecMul(const float* W, const float* x, float* y, int M, int N) {
   void (*MatVecMulRow)(const float* w_row, int stride, const float* x, float* y, int cols) = MatVecMulRow_NAIVE;
 //  printf("W: %p, x: %p, y: %p, M: %d, N: %d\n", W, x, y, M, N);
 //  printf("W is aligned: %d, x is aligned: %d, y is aligned: %d\n", IS_ALIGNED(W, 8), IS_ALIGNED(x, 8), IS_ALIGNED(y, 8));
+//  printf("has neon: %d, has neon64: %d, has avx2: %d\n", cpuinfo_has_arm_neon(), cpuinfo_has_arm_neon_v8(), cpuinfo_has_x86_avx2());
 
 #if defined(HAS_MATVECMUL_NEON)
   if (/*IS_ALIGNED(W, 8) && */
@@ -30,7 +31,7 @@ void MatVecMul(const float* W, const float* x, float* y, int M, int N) {
 #endif
 #if defined(HAS_MATVECMUL_AVX2)
   if (/*IS_ALIGNED(W, 8) && */
-      IS_ALIGNED(x, 8) && cpuinfo_has_x86_avx2()) {
+      IS_ALIGNED(x, 8) && IS_ALIGNED(y, 8) && cpuinfo_has_x86_avx2()) {
     MatVecMulRow = MatVecMulRow_AVX2;
   }
 #endif

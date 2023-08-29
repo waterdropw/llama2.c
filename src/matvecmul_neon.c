@@ -3,6 +3,8 @@
 //
 
 #include "matvecmul_row.h"
+
+#if defined(HAS_MATVECMUL_NEON)
 #include <arm_neon.h>
 
 #ifdef __cplusplus
@@ -10,7 +12,6 @@ namespace hpc {
 extern "C" {
 #endif
 
-#if defined(HAS_MATVECMUL_NEON)
 void MatVecMulRow_NEON(const float* w, int stride, const float* x, float* y, int cols) {
 //  printf("NEON\n");
   float32x4_t vec4_w;
@@ -26,9 +27,10 @@ void MatVecMulRow_NEON(const float* w, int stride, const float* x, float* y, int
   } while (cols > 0);
   *y = vaddvq_f32(vec4_sum);
 }
-#endif  // defined(HAS_MATVECMUL_INTRINSICS)
 
 #ifdef __cplusplus
 }  // extern "C"
 }  // namespace hpc
 #endif
+
+#endif  // defined(HAS_MATVECMUL_NEON)

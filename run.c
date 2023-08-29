@@ -20,6 +20,7 @@ $ ./run
     #include <unistd.h>
     #include <sys/mman.h>
 #endif
+#include "cpuinfo.h"
 #include "matvecmul.h"
 // Processor memory alignment stride
 #define CACHE_ALIGN_SIZE 64
@@ -529,6 +530,7 @@ void error_usage() {
 }
 
 int main(int argc, char *argv[]) {
+    cpuinfo_initialize();
     // default inits
     char *checkpoint = NULL;  // e.g. out/model.bin
     float temperature = 1.0f; // 0.0 = greedy deterministic. 1.0 = original. don't set higher
@@ -678,5 +680,7 @@ int main(int argc, char *argv[]) {
     if (prompt_tokens != NULL) free(prompt_tokens);
     if (data != MAP_FAILED) munmap(data, file_size);
     if (fd != -1) close(fd);
+
+    cpuinfo_deinitialize();
     return 0;
 }
