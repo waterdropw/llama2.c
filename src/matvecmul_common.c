@@ -9,10 +9,10 @@ namespace hpc {
 extern "C" {
 #endif
 
-void MatVecMulRow_NAIVE(const float* W, int stride, const float* x, float* y, int cols) {
+void MatVecMulRow_NAIVE(const float* w, int stride, const float* x, float* y, int cols) {
   float val = 0.0f;
   for (int j = 0; j < cols; j++) {
-    val += W[j] * x[j];
+    val += w[j] * x[j];
   }
   y[0] = val;
 }

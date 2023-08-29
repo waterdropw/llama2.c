@@ -11,23 +11,24 @@ extern "C" {
 #endif
 
 #if defined(HAS_MATVECMUL_NEON64)
-void MatVecMulRow_NEON64(const float* W, int stride, const float* x, float* y, int cols) {
-#if 1
+void MatVecMulRow_NEON64(const float* w, int stride, const float* x, float* y, int cols) {
+//  printf("NEON64\n");
+#if 0
   __asm__ volatile (
       // 遍历一行，每次处理4个元素，累加结果暂存到寄存器 v0 中
-      "movi   v0.2d, #0000000000000000             \n"
-      "add    w8, w4, #4            \n"
+      "movi   v0.4s, #0             \n"
+      "add    x8, x4, #4            \n"
       "1:                           \n"
-      "ldr     q1, [x0], #16        \n"
-      "ldr     q2, [x2], #16        \n"
+      "ld1     {v1.4s}, [%0], #16        \n"
+      "ld1     {v2.4s}, [%2], #16        \n"
       "sub     w8, w8, #4           \n"
       "cmp     w8, #4               \n"
       "fmla    v0.4s, v2.4s, v1.4s  \n"
       "b.gt    1b                   \n"
       "faddp   v0.4s, v0.4s, v0.4s  \n"
       "faddp   s0, v0.2s            \n"
-      "str     s0, [x3]             \n"
-      : "+r"(W),        // %0
+      "str     s0, [%3]             \n"
+      : "+r"(w),        // %0
         "+r"(stride),   // %1
         "+r"(x),        // %2
         "+r"(y)         // %3
@@ -36,22 +37,22 @@ void MatVecMulRow_NEON64(const float* W, int stride, const float* x, float* y, i
       );
 #else
   __asm__ volatile (
-      // 遍历一行，每次处理4个元素，累加结果暂存到寄存器 v0 中
+      // 遍历一行，每次处理8个元素，累加结果暂存到寄存器 v0,v1 中
       "movi   v0.2d, #0000000000000000             \n"
-      "add    x8, x4, #8            \n"
+      "add    w8, w4, #8            \n"
       "movi   v1.2d, #0000000000000000             \n"
       "1:                           \n"
       "ldp     q2, q3, [%0], #32    \n"   // ldx/ldr/ldp 偏移按字节单位计数
+      "subs    w8, w8, #8           \n"
       "ldp     q4, q5, [%2], #32    \n"
-      "subs    x8, x8, #8           \n"
       "fmla    v0.4s, v2.4s, v4.4s  \n"
       "fmla    v0.4s, v3.4s, v5.4s  \n"
       "b.ne    1b                   \n"
       "fadd    v0.4s, v0.4s, v1.4s  \n"
       "faddp   v0.4s, v0.4s, v0.4s  \n"
       "faddp   s0, v0.2s            \n"
-      "str     s0, [x3]             \n"
-      : "+r"(W),        // %0
+      "str     s0, [%3]             \n"
+      : "+r"(w),        // %0
         "+r"(stride),   // %1
         "+r"(x),        // %2
         "+r"(y)         // %3

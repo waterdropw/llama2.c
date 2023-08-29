@@ -21,7 +21,8 @@ $ ./run
     #include <sys/mman.h>
 #endif
 #include "matvecmul.h"
-
+// Processor memory alignment stride
+#define CACHE_ALIGN_SIZE 64
 // ----------------------------------------------------------------------------
 // Transformer and RunState structs, and related memory management
 
@@ -82,21 +83,30 @@ typedef struct {
     float* value_cache; // (layer, seq_len, dim)
 } RunState;
 
+void* aligned_calloc(size_t nitems, size_t size) {
+    void* mem = NULL;
+    size_t block_size = nitems * size;
+    if (posix_memalign(&mem, CACHE_ALIGN_SIZE, block_size)) {
+      return NULL;
+    }
+    return mem;
+}
+
 void malloc_run_state(RunState* s, Config* p) {
     // we calloc instead of malloc to keep valgrind happy
-    s->x = calloc(p->dim, sizeof(float));
-    s->xb = calloc(p->dim, sizeof(float));
-    s->xb2 = calloc(p->dim, sizeof(float));
-    s->hb = calloc(p->hidden_dim, sizeof(float));
-    s->hb2 = calloc(p->hidden_dim, sizeof(float));
-    s->q = calloc(p->dim, sizeof(float));
-    s->k = calloc(p->dim, sizeof(float));
-    s->v = calloc(p->dim, sizeof(float));
-    s->att = calloc(p->n_heads * p->seq_len, sizeof(float));
-    s->logits = calloc(p->vocab_size, sizeof(float));
-    s->probindex = calloc(p->vocab_size, sizeof(ProbIndex));
-    s->key_cache = calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
-    s->value_cache = calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
+    s->x = aligned_calloc(p->dim, sizeof(float));
+    s->xb = aligned_calloc(p->dim, sizeof(float));
+    s->xb2 = aligned_calloc(p->dim, sizeof(float));
+    s->hb = aligned_calloc(p->hidden_dim, sizeof(float));
+    s->hb2 = aligned_calloc(p->hidden_dim, sizeof(float));
+    s->q = aligned_calloc(p->dim, sizeof(float));
+    s->k = aligned_calloc(p->dim, sizeof(float));
+    s->v = aligned_calloc(p->dim, sizeof(float));
+    s->att = aligned_calloc(p->n_heads * p->seq_len, sizeof(float));
+    s->logits = aligned_calloc(p->vocab_size, sizeof(float));
+    s->probindex = aligned_calloc(p->vocab_size, sizeof(ProbIndex));
+    s->key_cache = aligned_calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
+    s->value_cache = aligned_calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
     // ensure all mallocs went fine
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 || !s->q
      || !s->k || !s->v || !s->att || !s->logits || !s->key_cache
