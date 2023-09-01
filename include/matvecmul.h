@@ -13,6 +13,7 @@ extern "C" {
 // Matrix multiply vector, Y=Wx for MxN matrix W and Nx1 vector X
 void MatVecMul(const float* W, const float* x, float* y, int M, int N);
 
+void* aligned_calloc(size_t nitems, size_t size);
 
 #ifdef __cplusplus
 }  // extern "C"

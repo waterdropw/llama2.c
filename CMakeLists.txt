@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.12)
 
 project(llama.c)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 include(FetchContent)
 # Fetch the cpuinfo library
 FetchContent_Declare(
@@ -14,17 +16,14 @@ set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE BOOL "" FORCE)
 set(CPUINFO_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cpuinfo)
 
-
-#set(CMAKE_C_STANDARD 11)
-#set(CMAKE_C_FLAGS_DEBUG "-g")
-
-option(LLAMA_C_O3   "llama.c: enable -O3 flag"               ON)
-option(LLAMA_C_NATIVE  "llama.c: enable -march=native flag"        ON)
-option(LLAMA_C_OFAST   "llama.c: enable -Ofast flag"               OFF)
-option(LLAMA_C_DEBUG  "llama.c: enable -g flag"        OFF)
-option(LLAMA_C_OMP  "llama.c: enable -fopenmp flag"        OFF)
-option(LLAMA_C_GNU  "llama.c: enable -std=gnu11 flag"        OFF)
-option(DISABLE_NEON "llama.c: disable NEON"        OFF)
+option(LLAMA_C_PERF   "llama.c: enable perf optimization"       ON)
+option(LLAMA_C_O3   "llama.c: enable -O3 flag"                  ON)
+option(LLAMA_C_NATIVE  "llama.c: enable -march=native flag"     OFF)
+option(LLAMA_C_OFAST   "llama.c: enable -Ofast flag"            OFF)
+option(LLAMA_C_DEBUG  "llama.c: enable -g flag"                 OFF)
+option(LLAMA_C_OMP  "llama.c: enable -fopenmp flag"             OFF)
+option(LLAMA_C_GNU  "llama.c: enable -std=gnu11 flag"           OFF)
+option(LLAMA_C_NEON "llama.c: enable NEON"                      OFF)
 
 file(GLOB_RECURSE OPTSRC src/*.c)
 
@@ -60,6 +59,9 @@ endif()
 if (LLAMA_C_GNU)
     target_compile_options(run PRIVATE -std=gnu11)
 endif ()
-if (DISABLE_NEON)
-    target_compile_definitions(run PRIVATE -DDISABLE_NEON=1)
+if (NOT LLAMA_C_NEON)
+    target_compile_definitions(run PRIVATE DISABLE_NEON)
+endif ()
+if (LLAMA_C_PERF)
+    target_compile_definitions(run PRIVATE ENABLE_PERF)
 endif ()

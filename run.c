@@ -20,10 +20,10 @@ $ ./run
     #include <unistd.h>
     #include <sys/mman.h>
 #endif
+#ifdef ENABLE_PERF
 #include "cpuinfo.h"
 #include "matvecmul.h"
-// Processor memory alignment stride
-#define CACHE_ALIGN_SIZE 64
+#endif
 // ----------------------------------------------------------------------------
 // Transformer and RunState structs, and related memory management
 
@@ -84,17 +84,8 @@ typedef struct {
     float* value_cache; // (layer, seq_len, dim)
 } RunState;
 
-void* aligned_calloc(size_t nitems, size_t size) {
-    void* mem = NULL;
-    size_t block_size = nitems * size;
-    if (posix_memalign(&mem, CACHE_ALIGN_SIZE, block_size)) {
-      return NULL;
-    }
-    return mem;
-}
-
 void malloc_run_state(RunState* s, Config* p) {
-    // we calloc instead of malloc to keep valgrind happy
+#ifdef ENABLE_PERF
     s->x = aligned_calloc(p->dim, sizeof(float));
     s->xb = aligned_calloc(p->dim, sizeof(float));
     s->xb2 = aligned_calloc(p->dim, sizeof(float));
@@ -108,6 +99,22 @@ void malloc_run_state(RunState* s, Config* p) {
     s->probindex = aligned_calloc(p->vocab_size, sizeof(ProbIndex));
     s->key_cache = aligned_calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
     s->value_cache = aligned_calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
+#else
+    s->x = calloc(p->dim, sizeof(float));
+    s->xb = calloc(p->dim, sizeof(float));
+    s->xb2 = calloc(p->dim, sizeof(float));
+    s->hb = calloc(p->hidden_dim, sizeof(float));
+    s->hb2 = calloc(p->hidden_dim, sizeof(float));
+    s->q = calloc(p->dim, sizeof(float));
+    s->k = calloc(p->dim, sizeof(float));
+    s->v = calloc(p->dim, sizeof(float));
+    s->att = calloc(p->n_heads * p->seq_len, sizeof(float));
+    s->logits = calloc(p->vocab_size, sizeof(float));
+    s->probindex = calloc(p->vocab_size, sizeof(ProbIndex));
+    s->key_cache = calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
+    s->value_cache = calloc(p->n_layers * p->seq_len * p->dim, sizeof(float));
+#endif
+    // we calloc instead of malloc to keep valgrind happy
     // ensure all mallocs went fine
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 || !s->q
      || !s->k || !s->v || !s->att || !s->logits || !s->key_cache
@@ -213,7 +220,9 @@ void softmax(float* x, int size) {
 }
 
 void matmul(float* xout, float* x, float* w, int n, int d) {
-#if 0
+#ifdef ENABLE_PERF
+    MatVecMul(w, x, xout, d, n);
+#else
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
     // printf("matmul_naive: d=%d, n=%d\n", d, n);
@@ -226,8 +235,6 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
         }
         xout[i] = val;
     }
-#else
-    MatVecMul(w, x, xout, d, n);
 #endif
 }
 
@@ -530,7 +537,9 @@ void error_usage() {
 }
 
 int main(int argc, char *argv[]) {
+#ifdef ENABLE_PERF
     cpuinfo_initialize();
+#endif
     // default inits
     char *checkpoint = NULL;  // e.g. out/model.bin
     float temperature = 1.0f; // 0.0 = greedy deterministic. 1.0 = original. don't set higher
@@ -680,7 +689,8 @@ int main(int argc, char *argv[]) {
     if (prompt_tokens != NULL) free(prompt_tokens);
     if (data != MAP_FAILED) munmap(data, file_size);
     if (fd != -1) close(fd);
-
+#ifdef ENABLE_PERF
     cpuinfo_deinitialize();
+#endif
     return 0;
 }
