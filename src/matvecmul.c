@@ -57,8 +57,8 @@ static void MatVecMul_L1D32KB_L2D256KB(const float* W, const float* x, float* y,
   }
 #endif
 
-#pragma omp parallel for thread_number(4)
   for (int block = 0; block < M; block += 64) {
+    #pragma omp parallel for thread_number(8)
     for (int i = 0; i < 64; i+=8) {
       int index = block + i;
       MatVecMulRow(W+(index+0)*N, N, x, &y[index+0], N);
