@@ -20,9 +20,14 @@ $ ./run
     #include <unistd.h>
     #include <sys/mman.h>
 #endif
-#ifdef ENABLE_PERF
+#ifdef ENABLE_OPT
 #include "cpuinfo.h"
 #include "matvecmul.h"
+#endif
+#ifdef ENABLE_TMA
+#include "mperf/cpu_affinity.h"
+#include "mperf/timer.h"
+#include "mperf/tma/tma.h"
 #endif
 // ----------------------------------------------------------------------------
 // Transformer and RunState structs, and related memory management
@@ -85,7 +90,7 @@ typedef struct {
 } RunState;
 
 void malloc_run_state(RunState* s, Config* p) {
-#ifdef ENABLE_PERF
+#ifdef ENABLE_OPT
     s->x = aligned_calloc(p->dim, sizeof(float));
     s->xb = aligned_calloc(p->dim, sizeof(float));
     s->xb2 = aligned_calloc(p->dim, sizeof(float));
@@ -220,7 +225,7 @@ void softmax(float* x, int size) {
 }
 
 void matmul(float* xout, float* x, float* w, int n, int d) {
-#ifdef ENABLE_PERF
+#ifdef ENABLE_OPT
     MatVecMul(w, x, xout, d, n);
 #else
     // W (d,n) @ x (n,) -> xout (d,)
@@ -537,8 +542,68 @@ void error_usage() {
 }
 
 int main(int argc, char *argv[]) {
-#ifdef ENABLE_PERF
+#ifdef ENABLE_OPT
     cpuinfo_initialize();
+#endif
+#ifdef ENABLE_TMA
+#if defined(__aarch64__)
+    mperf::tma::MPFTMA mpf_tma(mperf::MPFXPUType::A55);
+    // clang-format off
+    mpf_tma.init({"Frontend_Bound",
+                      "Fetch_Latency",
+                          "ICache_Misses",
+                          "ITLB_Misses",
+                          "Predecode_Error",
+                      "Fetch_Bandwidth",
+                  "Bad_Speculation",
+                      "Branch_Mispredicts",
+                  "Backend_Bound",
+                      "Memory_Bound",
+                          "Load_Bound",
+                              "Load_DTLB",
+                              "Load_Cache",
+                          "Store_Bound",
+                              "Store_TLB",
+                              "Store_Buffer",
+                      "Core_Bound",
+                          "Interlock_Bound",
+                              "Interlock_AGU",
+                              "Interlock_FPU",
+                          "Core_Bound_Others",
+                  "Retiring",
+                      "LD_Retiring",
+                      "ST_Retiring",
+                      "DP_Retiring",
+                      "ASE_Retiring",
+                      "VFP_Retiring",
+                      "PC_Write_Retiring",
+                          "BR_IMMED_Retiring",
+                          "BR_RETURN_Retiring",
+                          "BR_INDIRECT_Retiring",
+                "Metric_L1D_Miss_Ratio",
+	                    "Metric_L1D_RD_Miss_Ratio",
+	                    "Metric_L1D_WR_Miss_Ratio",
+                    "Metric_L2D_Miss_Ratio",
+	                    "Metric_L2D_RD_Miss_Ratio",
+	                    "Metric_L2D_WR_Miss_Ratio",
+                    "Metric_L3D_Miss_Ratio",
+	                "Metric_L3D_RD_Miss_Ratio",
+                    "Metric_BR_Mispred_Ratio",
+                    "Metric_L1I_TLB_Miss_Ratio",
+                    "Metric_L1D_TLB_Miss_Ratio",
+                    "Metric_L2_TLB_Miss_Ratio",
+                    "Metric_ITLB_Table_Walk_Ratio",
+                    "Metric_DTLB_Table_Walk_Ratio",
+                    "Metric_Load_Port_Util",
+                    "Metric_Store_Port_Util",
+                    "Metric_FPU_Util",
+                    "Metric_GFLOPs_Use"});
+    // clang-format on
+#else
+    mperf::tma::MPFTMA mpf_tma(mperf::MPFXPUType::HSX_SERVER);
+    mpf_tma.init(
+        {"Frontend_Bound", "Bad_Speculation", "Backend_Bound", "Retiring"});
+#endif
 #endif
     // default inits
     char *checkpoint = NULL;  // e.g. out/model.bin
@@ -624,7 +689,12 @@ int main(int argc, char *argv[]) {
         prompt_tokens = (int*)malloc(strlen(prompt) * sizeof(int));
         bpe_encode(prompt, vocab, vocab_scores, config.vocab_size, max_token_length, prompt_tokens, &num_prompt_tokens);
     }
-
+#ifdef ENABLE_TMA
+    size_t gn = mpf_tma.group_num();
+    for (size_t i = 0; i < gn; ++i) {
+        mpf_tma.start(i);
+    }
+#endif
     // start the main loop
     long start = 0;  // used to time our code, only initialized after first iteration
     int next;        // will store the next token in the sequence
@@ -680,7 +750,11 @@ int main(int argc, char *argv[]) {
         long end = time_in_ms();
         fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
     }
-
+#ifdef ENABLE_TMA
+    for (size_t i = 0; i < gn; ++i) {
+        mpf_tma.sample_and_stop(i);
+    }
+#endif
     // memory and file handles cleanup
     free_run_state(&state);
     for (int i = 0; i < config.vocab_size; i++) { free(vocab[i]); }
@@ -689,8 +763,11 @@ int main(int argc, char *argv[]) {
     if (prompt_tokens != NULL) free(prompt_tokens);
     if (data != MAP_FAILED) munmap(data, file_size);
     if (fd != -1) close(fd);
-#ifdef ENABLE_PERF
+#ifdef ENABLE_OPT
     cpuinfo_deinitialize();
+#endif
+#ifdef ENABLE_TMA
+    mpf_tma.deinit();
 #endif
     return 0;
 }
